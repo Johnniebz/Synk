@@ -348,7 +348,7 @@ struct TaskRowView: View {
         }
         .padding(.vertical, 4)
         .sheet(isPresented: $showingTaskInfo) {
-            TaskInfoSheet(task: task, viewModel: viewModel)
+            UnifiedTaskDetailView(task: task, viewModel: viewModel)
         }
     }
 
@@ -364,14 +364,12 @@ struct TaskRowView: View {
     }
 }
 
-// MARK: - Subtask Row View (direct List item with indentation)
+// MARK: - Subtask Row View (simple - details accessed via parent task)
 
 struct SubtaskRowView: View {
     let subtask: Subtask
     let task: DONEOTask
     @Bindable var viewModel: ProjectChatViewModel
-
-    @State private var showingDetail = false
 
     private var canToggle: Bool {
         viewModel.canToggleSubtask(subtask)
@@ -422,15 +420,11 @@ struct SubtaskRowView: View {
                         }
                     }
 
-                    // Support documents indicator
-                    if !subtask.instructionAttachments.isEmpty {
-                        HStack(spacing: 2) {
-                            Image(systemName: "paperclip")
-                                .font(.system(size: 9))
-                            Text("\(subtask.instructionAttachments.count)")
-                                .font(.system(size: 11))
-                        }
-                        .foregroundStyle(Theme.primary)
+                    // Has details indicator (notes or attachments)
+                    if subtask.description != nil || !subtask.instructionAttachments.isEmpty {
+                        Image(systemName: "doc.text")
+                            .font(.system(size: 9))
+                            .foregroundStyle(Theme.primary)
                     }
 
                     // Due date
@@ -443,42 +437,12 @@ struct SubtaskRowView: View {
                         }
                         .foregroundStyle(subtask.isOverdue ? .red : .secondary)
                     }
-
-                    // Unread comments indicator
-                    let unreadCount = viewModel.unreadCount(for: subtask, in: task)
-                    if unreadCount > 0 {
-                        HStack(spacing: 2) {
-                            Image(systemName: "bubble.left.fill")
-                                .font(.system(size: 8))
-                            Text("\(unreadCount)")
-                                .font(.system(size: 10))
-                        }
-                        .foregroundStyle(.white)
-                        .padding(.horizontal, 5)
-                        .padding(.vertical, 2)
-                        .background(Theme.primary)
-                        .clipShape(Capsule())
-                    }
                 }
             }
             .frame(maxWidth: .infinity, alignment: .leading)
-
-            // Info button (i) - opens detail sheet
-            Button {
-                showingDetail = true
-            } label: {
-                Image(systemName: "info.circle")
-                    .font(.system(size: 18))
-                    .foregroundStyle(Theme.primary)
-                    .frame(width: 28, height: 28)
-            }
-            .buttonStyle(.plain)
         }
         .padding(.vertical, 2)
         .listRowBackground(Color(uiColor: .secondarySystemGroupedBackground).opacity(0.5))
-        .sheet(isPresented: $showingDetail) {
-            SubtaskInfoSheet(subtask: subtask, task: task, viewModel: viewModel)
-        }
     }
 
     private func formatDueDate(_ date: Date) -> String {
