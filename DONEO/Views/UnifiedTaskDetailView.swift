@@ -11,6 +11,7 @@ struct UnifiedTaskDetailView: View {
     @State private var expandedSubtaskIds: Set<UUID> = []
     @State private var showingAddSubtask = false
     @State private var showingEditTask = false
+    @State private var showingDetails = false  // For collapsible instructions/attachments
 
     // Comment bar state
     @State private var commentText: String = ""
@@ -99,9 +100,14 @@ struct UnifiedTaskDetailView: View {
 
     // MARK: - Task Header Section
 
+    private var hasDetails: Bool {
+        (currentTask.notes != nil && !currentTask.notes!.isEmpty) ||
+        !currentTask.attachments.filter({ $0.isInstruction }).isEmpty
+    }
+
     private var taskHeaderSection: some View {
         VStack(alignment: .leading, spacing: 12) {
-            // Status & Checkbox
+            // Status & Checkbox + Due Date (always visible)
             HStack(spacing: 12) {
                 Button {
                     viewModel.toggleTaskStatus(currentTask)
@@ -111,16 +117,14 @@ struct UnifiedTaskDetailView: View {
                         .foregroundStyle(currentTask.status == .done ? .green : .secondary)
                 }
 
-                VStack(alignment: .leading, spacing: 2) {
-                    Text(currentTask.status == .done ? "Completada" : "Pendiente")
-                        .font(.system(size: 14, weight: .medium))
-                        .foregroundStyle(currentTask.status == .done ? .green : .orange)
+                Text(currentTask.status == .done ? "Completada" : "Pendiente")
+                    .font(.system(size: 14, weight: .medium))
+                    .foregroundStyle(currentTask.status == .done ? .green : .orange)
 
-                    if currentTask.isOverdue && currentTask.status != .done {
-                        Text("Vencida")
-                            .font(.system(size: 12, weight: .medium))
-                            .foregroundStyle(.red)
-                    }
+                if currentTask.isOverdue && currentTask.status != .done {
+                    Text("Vencida")
+                        .font(.system(size: 12, weight: .medium))
+                        .foregroundStyle(.red)
                 }
 
                 Spacer()
@@ -134,74 +138,119 @@ struct UnifiedTaskDetailView: View {
                             .font(.system(size: 13, weight: .medium))
                     }
                     .foregroundStyle(currentTask.isOverdue ? .red : .secondary)
-                    .padding(.horizontal, 10)
-                    .padding(.vertical, 6)
-                    .background(Color(uiColor: .tertiarySystemBackground))
-                    .clipShape(Capsule())
                 }
             }
 
-            // Assignees
+            // Assignees (always visible, compact)
             if !currentTask.assignees.isEmpty {
-                VStack(alignment: .leading, spacing: 6) {
+                HStack(spacing: 6) {
                     Text("Asignado a")
                         .font(.system(size: 12, weight: .medium))
                         .foregroundStyle(.secondary)
 
-                    HStack(spacing: 8) {
-                        ForEach(currentTask.assignees) { assignee in
-                            HStack(spacing: 6) {
-                                Circle()
-                                    .fill(Theme.primaryLight)
-                                    .frame(width: 24, height: 24)
-                                    .overlay {
-                                        Text(assignee.avatarInitials)
-                                            .font(.system(size: 9, weight: .medium))
-                                            .foregroundStyle(Theme.primary)
-                                    }
-                                Text(assignee.id == viewModel.currentUser.id ? "Yo" : assignee.displayFirstName)
-                                    .font(.system(size: 13))
-                            }
-                            .padding(.horizontal, 8)
-                            .padding(.vertical, 4)
-                            .background(Color(uiColor: .tertiarySystemBackground))
-                            .clipShape(Capsule())
+                    HStack(spacing: -6) {
+                        ForEach(currentTask.assignees.prefix(4)) { assignee in
+                            Circle()
+                                .fill(Theme.primaryLight)
+                                .frame(width: 24, height: 24)
+                                .overlay {
+                                    Text(assignee.avatarInitials)
+                                        .font(.system(size: 9, weight: .medium))
+                                        .foregroundStyle(Theme.primary)
+                                }
+                                .overlay(
+                                    Circle()
+                                        .stroke(Color(uiColor: .systemBackground), lineWidth: 2)
+                                )
                         }
                     }
-                }
-            }
 
-            // Notes/Instructions
-            if let notes = currentTask.notes, !notes.isEmpty {
-                VStack(alignment: .leading, spacing: 6) {
-                    Text("Instrucciones")
-                        .font(.system(size: 12, weight: .medium))
-                        .foregroundStyle(.secondary)
-
-                    Text(notes)
-                        .font(.system(size: 14))
+                    let names = currentTask.assignees.map { $0.id == viewModel.currentUser.id ? "Yo" : $0.displayFirstName }
+                    Text(names.prefix(2).joined(separator: ", ") + (names.count > 2 ? " +\(names.count - 2)" : ""))
+                        .font(.system(size: 13))
                         .foregroundStyle(.primary)
-                        .padding(12)
-                        .frame(maxWidth: .infinity, alignment: .leading)
-                        .background(Color(uiColor: .tertiarySystemBackground))
-                        .clipShape(RoundedRectangle(cornerRadius: 10))
                 }
             }
 
-            // Attachments
-            if !currentTask.attachments.filter({ $0.isInstruction }).isEmpty {
-                VStack(alignment: .leading, spacing: 6) {
-                    Text("Adjuntos")
-                        .font(.system(size: 12, weight: .medium))
-                        .foregroundStyle(.secondary)
+            // Collapsible Details Section (Instructions + Attachments)
+            if hasDetails {
+                Button {
+                    withAnimation(.easeInOut(duration: 0.2)) {
+                        showingDetails.toggle()
+                    }
+                } label: {
+                    HStack {
+                        Image(systemName: showingDetails ? "chevron.down" : "chevron.right")
+                            .font(.system(size: 12, weight: .semibold))
+                            .foregroundStyle(.secondary)
 
-                    ScrollView(.horizontal, showsIndicators: false) {
-                        HStack(spacing: 10) {
-                            ForEach(currentTask.attachments.filter { $0.isInstruction }) { attachment in
-                                TaskAttachmentChip(attachment: attachment)
+                        Text("Detalles")
+                            .font(.system(size: 13, weight: .medium))
+                            .foregroundStyle(.secondary)
+
+                        // Indicators for what's inside
+                        if let notes = currentTask.notes, !notes.isEmpty {
+                            Image(systemName: "doc.text")
+                                .font(.system(size: 11))
+                                .foregroundStyle(Theme.primary)
+                        }
+
+                        let attachmentCount = currentTask.attachments.filter { $0.isInstruction }.count
+                        if attachmentCount > 0 {
+                            HStack(spacing: 2) {
+                                Image(systemName: "paperclip")
+                                    .font(.system(size: 11))
+                                Text("\(attachmentCount)")
+                                    .font(.system(size: 11))
+                            }
+                            .foregroundStyle(Theme.primary)
+                        }
+
+                        Spacer()
+                    }
+                    .padding(.vertical, 8)
+                }
+                .buttonStyle(.plain)
+
+                // Expanded details content
+                if showingDetails {
+                    VStack(alignment: .leading, spacing: 12) {
+                        // Notes/Instructions
+                        if let notes = currentTask.notes, !notes.isEmpty {
+                            VStack(alignment: .leading, spacing: 4) {
+                                Text("Instrucciones")
+                                    .font(.system(size: 11, weight: .medium))
+                                    .foregroundStyle(.tertiary)
+
+                                Text(notes)
+                                    .font(.system(size: 14))
+                                    .foregroundStyle(.primary)
+                            }
+                            .padding(12)
+                            .frame(maxWidth: .infinity, alignment: .leading)
+                            .background(Color(uiColor: .tertiarySystemBackground))
+                            .clipShape(RoundedRectangle(cornerRadius: 10))
+                        }
+
+                        // Attachments
+                        let attachments = currentTask.attachments.filter { $0.isInstruction }
+                        if !attachments.isEmpty {
+                            VStack(alignment: .leading, spacing: 4) {
+                                Text("Adjuntos")
+                                    .font(.system(size: 11, weight: .medium))
+                                    .foregroundStyle(.tertiary)
+
+                                ScrollView(.horizontal, showsIndicators: false) {
+                                    HStack(spacing: 8) {
+                                        ForEach(attachments) { attachment in
+                                            TaskAttachmentChip(attachment: attachment)
+                                        }
+                                    }
+                                }
                             }
                         }
                     }
+                    .transition(.opacity.combined(with: .move(edge: .top)))
                 }
             }
         }
