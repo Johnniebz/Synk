@@ -68,10 +68,8 @@ struct ProjectChatView: View {
             }
         }
         .toolbar(.hidden, for: .tabBar)
-        .sheet(isPresented: $showingTaskDrawer, onDismiss: {
-            taskToExpandInDrawer = nil
-        }) {
-            TaskDrawerSheet(viewModel: viewModel, initialExpandedTaskId: taskToExpandInDrawer)
+        .sheet(isPresented: $showingTaskDrawer) {
+            TaskDrawerSheet(viewModel: viewModel)
                 .presentationDetents([.large])
                 .presentationDragIndicator(.visible)
         }
