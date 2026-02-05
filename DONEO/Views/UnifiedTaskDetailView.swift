@@ -8,10 +8,11 @@ struct UnifiedTaskDetailView: View {
     @Bindable var viewModel: ProjectChatViewModel
     @Environment(\.dismiss) private var dismiss
 
-    @State private var expandedSubtaskIds: Set<UUID> = []
     @State private var showingAddSubtask = false
     @State private var showingEditTask = false
-    @State private var showingDetails = false  // For collapsible instructions/attachments
+    @State private var showingDetails = false      // For collapsible instructions/attachments
+    @State private var showingSubtasks = false     // For collapsible subtasks section
+    @State private var selectedSubtask: Subtask?   // For subtask info sheet
 
     // Comment bar state
     @State private var commentText: String = ""
@@ -258,243 +259,146 @@ struct UnifiedTaskDetailView: View {
         .background(Color(uiColor: .systemBackground))
     }
 
-    // MARK: - Subtasks Section
+    // MARK: - Subtasks Section (Collapsible)
 
     private var subtasksSection: some View {
         VStack(alignment: .leading, spacing: 0) {
-            // Section header
-            HStack {
-                Text("Subtareas")
-                    .font(.system(size: 14, weight: .semibold))
-                    .foregroundStyle(.secondary)
-
-                Spacer()
-
-                let completed = currentTask.subtasks.filter { $0.isDone }.count
-                let total = currentTask.subtasks.count
-                if total > 0 {
-                    Text("\(completed)/\(total)")
-                        .font(.system(size: 13, weight: .medium))
-                        .foregroundStyle(completed == total ? .green : .secondary)
+            // Collapsible header
+            Button {
+                withAnimation(.easeInOut(duration: 0.2)) {
+                    showingSubtasks.toggle()
                 }
-            }
-            .padding(.horizontal, 16)
-            .padding(.top, 16)
-            .padding(.bottom, 8)
+            } label: {
+                HStack {
+                    Image(systemName: showingSubtasks ? "chevron.down" : "chevron.right")
+                        .font(.system(size: 12, weight: .semibold))
+                        .foregroundStyle(.secondary)
 
-            // Subtasks list
-            if currentTask.subtasks.isEmpty {
-                Text("Sin subtareas")
-                    .font(.system(size: 14))
-                    .foregroundStyle(.tertiary)
-                    .frame(maxWidth: .infinity)
-                    .padding(.vertical, 20)
-            } else {
+                    Text("Subtareas")
+                        .font(.system(size: 13, weight: .medium))
+                        .foregroundStyle(.secondary)
+
+                    let completed = currentTask.subtasks.filter { $0.isDone }.count
+                    let total = currentTask.subtasks.count
+                    if total > 0 {
+                        Text("\(completed)/\(total)")
+                            .font(.system(size: 12, weight: .medium))
+                            .foregroundStyle(completed == total ? .green : Theme.primary)
+                    }
+
+                    Spacer()
+
+                    // Add button always visible
+                    Button {
+                        showingAddSubtask = true
+                    } label: {
+                        Image(systemName: "plus.circle.fill")
+                            .font(.system(size: 20))
+                            .foregroundStyle(Theme.primary)
+                    }
+                }
+                .padding(.vertical, 8)
+            }
+            .buttonStyle(.plain)
+
+            // Expanded subtasks list
+            if showingSubtasks && !currentTask.subtasks.isEmpty {
                 VStack(spacing: 0) {
                     ForEach(currentTask.subtasks.sorted { !$0.isDone && $1.isDone }) { subtask in
-                        expandableSubtaskRow(subtask)
+                        subtaskRow(subtask)
 
                         if subtask.id != currentTask.subtasks.sorted(by: { !$0.isDone && $1.isDone }).last?.id {
                             Divider()
-                                .padding(.leading, 52)
+                                .padding(.leading, 44)
                         }
                     }
                 }
-                .background(Color(uiColor: .systemBackground))
-                .clipShape(RoundedRectangle(cornerRadius: 12))
-                .padding(.horizontal, 16)
-            }
-
-            // Add subtask button
-            Button {
-                showingAddSubtask = true
-            } label: {
-                HStack(spacing: 8) {
-                    Image(systemName: "plus.circle.fill")
-                        .font(.system(size: 18))
-                    Text("Agregar Subtarea")
-                        .font(.system(size: 14, weight: .medium))
-                }
-                .foregroundStyle(Theme.primary)
-                .frame(maxWidth: .infinity)
-                .padding(.vertical, 12)
-                .background(Theme.primaryLight.opacity(0.5))
+                .background(Color(uiColor: .tertiarySystemBackground))
                 .clipShape(RoundedRectangle(cornerRadius: 10))
-            }
-            .padding(.horizontal, 16)
-            .padding(.top, 12)
-            .padding(.bottom, 16)
-        }
-    }
-
-    // MARK: - Expandable Subtask Row
-
-    @ViewBuilder
-    private func expandableSubtaskRow(_ subtask: Subtask) -> some View {
-        let isExpanded = expandedSubtaskIds.contains(subtask.id)
-
-        VStack(spacing: 0) {
-            // Main row
-            HStack(spacing: 12) {
-                // Checkbox
-                Button {
-                    if viewModel.canToggleSubtask(subtask) {
-                        viewModel.toggleSubtaskStatus(currentTask, subtask)
-                    }
-                } label: {
-                    Image(systemName: subtask.isDone ? "checkmark.circle.fill" : "circle")
-                        .font(.system(size: 22))
-                        .foregroundStyle(subtask.isDone ? .green : .secondary)
-                }
-
-                // Title and basic info
-                VStack(alignment: .leading, spacing: 4) {
-                    Text(subtask.title)
-                        .font(.system(size: 15))
-                        .strikethrough(subtask.isDone)
-                        .foregroundStyle(subtask.isDone ? .secondary : .primary)
-
-                    // Mini info row
-                    HStack(spacing: 8) {
-                        if !subtask.assignees.isEmpty {
-                            HStack(spacing: -4) {
-                                ForEach(subtask.assignees.prefix(2)) { assignee in
-                                    Circle()
-                                        .fill(Theme.primaryLight)
-                                        .frame(width: 18, height: 18)
-                                        .overlay {
-                                            Text(assignee.avatarInitials)
-                                                .font(.system(size: 7, weight: .medium))
-                                                .foregroundStyle(Theme.primary)
-                                        }
-                                }
-                            }
-                        }
-
-                        if let dueDate = subtask.dueDate {
-                            HStack(spacing: 3) {
-                                Image(systemName: "calendar")
-                                    .font(.system(size: 10))
-                                Text(formatDueDate(dueDate))
-                                    .font(.system(size: 11))
-                            }
-                            .foregroundStyle(subtask.isOverdue ? .red : .secondary)
-                        }
-
-                        if subtask.description != nil || !subtask.instructionAttachments.isEmpty {
-                            Image(systemName: "doc.text")
-                                .font(.system(size: 10))
-                                .foregroundStyle(Theme.primary)
-                        }
-                    }
-                }
-
-                Spacer()
-
-                // Expand/collapse button
-                Button {
-                    withAnimation(.easeInOut(duration: 0.2)) {
-                        if isExpanded {
-                            expandedSubtaskIds.remove(subtask.id)
-                        } else {
-                            expandedSubtaskIds.insert(subtask.id)
-                        }
-                    }
-                } label: {
-                    Image(systemName: isExpanded ? "chevron.up" : "chevron.down")
-                        .font(.system(size: 12, weight: .semibold))
-                        .foregroundStyle(.tertiary)
-                        .frame(width: 28, height: 28)
-                        .background(Color(uiColor: .tertiarySystemBackground))
-                        .clipShape(Circle())
-                }
-            }
-            .padding(.horizontal, 16)
-            .padding(.vertical, 12)
-
-            // Expanded details
-            if isExpanded {
-                VStack(alignment: .leading, spacing: 12) {
-                    // Assignees detail
-                    if !subtask.assignees.isEmpty {
-                        VStack(alignment: .leading, spacing: 4) {
-                            Text("Asignado a")
-                                .font(.system(size: 11, weight: .medium))
-                                .foregroundStyle(.tertiary)
-
-                            HStack(spacing: 6) {
-                                ForEach(subtask.assignees) { assignee in
-                                    HStack(spacing: 4) {
-                                        Circle()
-                                            .fill(Theme.primaryLight)
-                                            .frame(width: 20, height: 20)
-                                            .overlay {
-                                                Text(assignee.avatarInitials)
-                                                    .font(.system(size: 8, weight: .medium))
-                                                    .foregroundStyle(Theme.primary)
-                                            }
-                                        Text(assignee.id == viewModel.currentUser.id ? "Yo" : assignee.displayFirstName)
-                                            .font(.system(size: 12))
-                                    }
-                                    .padding(.horizontal, 8)
-                                    .padding(.vertical, 4)
-                                    .background(Color(uiColor: .tertiarySystemBackground))
-                                    .clipShape(Capsule())
-                                }
-                            }
-                        }
-                    }
-
-                    // Due date detail
-                    if let dueDate = subtask.dueDate {
-                        VStack(alignment: .leading, spacing: 4) {
-                            Text("Fecha limite")
-                                .font(.system(size: 11, weight: .medium))
-                                .foregroundStyle(.tertiary)
-
-                            HStack(spacing: 6) {
-                                Image(systemName: "calendar")
-                                    .font(.system(size: 12))
-                                Text(dueDate.formatted(.dateTime.weekday(.abbreviated).month(.abbreviated).day()))
-                                    .font(.system(size: 13))
-                            }
-                            .foregroundStyle(subtask.isOverdue ? .red : .primary)
-                        }
-                    }
-
-                    // Description/Notes
-                    if let description = subtask.description, !description.isEmpty {
-                        VStack(alignment: .leading, spacing: 4) {
-                            Text("Notas")
-                                .font(.system(size: 11, weight: .medium))
-                                .foregroundStyle(.tertiary)
-
-                            Text(description)
-                                .font(.system(size: 13))
-                                .foregroundStyle(.primary)
-                        }
-                    }
-
-                    // Attachments
-                    if !subtask.instructionAttachments.isEmpty {
-                        VStack(alignment: .leading, spacing: 4) {
-                            Text("Adjuntos")
-                                .font(.system(size: 11, weight: .medium))
-                                .foregroundStyle(.tertiary)
-
-                            HStack(spacing: 8) {
-                                ForEach(subtask.instructionAttachments) { attachment in
-                                    TaskAttachmentChip(attachment: attachment)
-                                }
-                            }
-                        }
-                    }
-                }
-                .padding(.horizontal, 52)
-                .padding(.bottom, 12)
                 .transition(.opacity.combined(with: .move(edge: .top)))
             }
         }
+        .padding(.horizontal, 16)
+        .padding(.bottom, 8)
+        .background(Color(uiColor: .systemBackground))
+        .sheet(item: $selectedSubtask) { subtask in
+            SubtaskInfoSheet(subtask: subtask, task: currentTask, viewModel: viewModel)
+        }
+    }
+
+    // MARK: - Simple Subtask Row with (i) button
+
+    private func subtaskRow(_ subtask: Subtask) -> some View {
+        HStack(spacing: 10) {
+            // Checkbox
+            Button {
+                if viewModel.canToggleSubtask(subtask) {
+                    viewModel.toggleSubtaskStatus(currentTask, subtask)
+                }
+            } label: {
+                Image(systemName: subtask.isDone ? "checkmark.circle.fill" : "circle")
+                    .font(.system(size: 20))
+                    .foregroundStyle(subtask.isDone ? .green : .secondary)
+            }
+            .buttonStyle(.plain)
+
+            // Title and mini info
+            VStack(alignment: .leading, spacing: 2) {
+                Text(subtask.title)
+                    .font(.system(size: 14))
+                    .strikethrough(subtask.isDone)
+                    .foregroundStyle(subtask.isDone ? .secondary : .primary)
+                    .lineLimit(2)
+
+                // Mini info row
+                HStack(spacing: 6) {
+                    if !subtask.assignees.isEmpty {
+                        HStack(spacing: -4) {
+                            ForEach(subtask.assignees.prefix(2)) { assignee in
+                                Circle()
+                                    .fill(Theme.primaryLight)
+                                    .frame(width: 16, height: 16)
+                                    .overlay {
+                                        Text(assignee.avatarInitials)
+                                            .font(.system(size: 6, weight: .medium))
+                                            .foregroundStyle(Theme.primary)
+                                    }
+                            }
+                        }
+                    }
+
+                    if subtask.description != nil || !subtask.instructionAttachments.isEmpty {
+                        Image(systemName: "doc.text")
+                            .font(.system(size: 9))
+                            .foregroundStyle(Theme.primary)
+                    }
+
+                    if let dueDate = subtask.dueDate {
+                        HStack(spacing: 2) {
+                            Image(systemName: "calendar")
+                                .font(.system(size: 9))
+                            Text(formatDueDate(dueDate))
+                                .font(.system(size: 10))
+                        }
+                        .foregroundStyle(subtask.isOverdue ? .red : .secondary)
+                    }
+                }
+            }
+
+            Spacer()
+
+            // Info button (i)
+            Button {
+                selectedSubtask = subtask
+            } label: {
+                Image(systemName: "info.circle")
+                    .font(.system(size: 18))
+                    .foregroundStyle(Theme.primary)
+            }
+            .buttonStyle(.plain)
+        }
+        .padding(.horizontal, 12)
+        .padding(.vertical, 10)
     }
 
     // MARK: - Chat Section
