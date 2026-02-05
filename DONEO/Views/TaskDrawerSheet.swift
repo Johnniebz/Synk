@@ -230,17 +230,26 @@ struct TaskRowView: View {
             }
             .buttonStyle(.plain)
 
-            // Task info - tappable for editing
+            // Task title and info (tappable to expand/collapse)
             Button {
-                showingTaskInfo = true
+                onExpand()
             } label: {
                 VStack(alignment: .leading, spacing: 4) {
-                    Text(task.title)
-                        .font(.system(size: 16))
-                        .strikethrough(task.status == .done)
-                        .foregroundStyle(task.status == .done ? .secondary : .primary)
-                        .lineLimit(2)
-                        .multilineTextAlignment(.leading)
+                    HStack(spacing: 6) {
+                        Text(task.title)
+                            .font(.system(size: 16))
+                            .strikethrough(task.status == .done)
+                            .foregroundStyle(task.status == .done ? .secondary : .primary)
+                            .lineLimit(2)
+                            .multilineTextAlignment(.leading)
+
+                        // Expand/collapse indicator (if has subtasks)
+                        if !task.subtasks.isEmpty {
+                            Image(systemName: isExpanded ? "chevron.down" : "chevron.right")
+                                .font(.system(size: 12, weight: .semibold))
+                                .foregroundStyle(.tertiary)
+                        }
+                    }
 
                     HStack(spacing: 8) {
                         // Assignees
@@ -326,18 +335,16 @@ struct TaskRowView: View {
             }
             .buttonStyle(.plain)
 
-            // Expand/collapse chevron (only if has subtasks)
-            if !task.subtasks.isEmpty {
-                Button {
-                    onExpand()
-                } label: {
-                    Image(systemName: isExpanded ? "chevron.down" : "chevron.right")
-                        .font(.system(size: 14, weight: .semibold))
-                        .foregroundStyle(.tertiary)
-                        .frame(width: 24, height: 24)
-                }
-                .buttonStyle(.plain)
+            // Info button (i) - opens detail sheet
+            Button {
+                showingTaskInfo = true
+            } label: {
+                Image(systemName: "info.circle")
+                    .font(.system(size: 20))
+                    .foregroundStyle(Theme.primary)
+                    .frame(width: 32, height: 32)
             }
+            .buttonStyle(.plain)
         }
         .padding(.vertical, 4)
         .sheet(isPresented: $showingTaskInfo) {
@@ -388,76 +395,82 @@ struct SubtaskRowView: View {
             .buttonStyle(.plain)
             .disabled(!canToggle)
 
-            // Subtask info - tappable for details
+            // Subtask title and info
+            VStack(alignment: .leading, spacing: 2) {
+                Text(subtask.title)
+                    .font(.system(size: 14))
+                    .strikethrough(subtask.isDone)
+                    .foregroundStyle(subtask.isDone ? .secondary : .primary)
+                    .lineLimit(1)
+                    .multilineTextAlignment(.leading)
+
+                // Info row
+                HStack(spacing: 6) {
+                    // Assignees
+                    if !subtask.assignees.isEmpty {
+                        HStack(spacing: -4) {
+                            ForEach(subtask.assignees.prefix(2)) { assignee in
+                                Circle()
+                                    .fill(Theme.primaryLight)
+                                    .frame(width: 16, height: 16)
+                                    .overlay {
+                                        Text(assignee.avatarInitials)
+                                            .font(.system(size: 6, weight: .medium))
+                                            .foregroundStyle(Theme.primary)
+                                    }
+                            }
+                        }
+                    }
+
+                    // Support documents indicator
+                    if !subtask.instructionAttachments.isEmpty {
+                        HStack(spacing: 2) {
+                            Image(systemName: "paperclip")
+                                .font(.system(size: 9))
+                            Text("\(subtask.instructionAttachments.count)")
+                                .font(.system(size: 11))
+                        }
+                        .foregroundStyle(Theme.primary)
+                    }
+
+                    // Due date
+                    if let dueDate = subtask.dueDate {
+                        HStack(spacing: 2) {
+                            Image(systemName: "calendar")
+                                .font(.system(size: 9))
+                            Text(formatDueDate(dueDate))
+                                .font(.system(size: 11))
+                        }
+                        .foregroundStyle(subtask.isOverdue ? .red : .secondary)
+                    }
+
+                    // Unread comments indicator
+                    let unreadCount = viewModel.unreadCount(for: subtask, in: task)
+                    if unreadCount > 0 {
+                        HStack(spacing: 2) {
+                            Image(systemName: "bubble.left.fill")
+                                .font(.system(size: 8))
+                            Text("\(unreadCount)")
+                                .font(.system(size: 10))
+                        }
+                        .foregroundStyle(.white)
+                        .padding(.horizontal, 5)
+                        .padding(.vertical, 2)
+                        .background(Theme.primary)
+                        .clipShape(Capsule())
+                    }
+                }
+            }
+            .frame(maxWidth: .infinity, alignment: .leading)
+
+            // Info button (i) - opens detail sheet
             Button {
                 showingDetail = true
             } label: {
-                VStack(alignment: .leading, spacing: 2) {
-                    Text(subtask.title)
-                        .font(.system(size: 14))
-                        .strikethrough(subtask.isDone)
-                        .foregroundStyle(subtask.isDone ? .secondary : .primary)
-                        .lineLimit(1)
-                        .multilineTextAlignment(.leading)
-
-                    // Info row
-                    HStack(spacing: 6) {
-                        // Assignees
-                        if !subtask.assignees.isEmpty {
-                            HStack(spacing: -4) {
-                                ForEach(subtask.assignees.prefix(2)) { assignee in
-                                    Circle()
-                                        .fill(Theme.primaryLight)
-                                        .frame(width: 16, height: 16)
-                                        .overlay {
-                                            Text(assignee.avatarInitials)
-                                                .font(.system(size: 6, weight: .medium))
-                                                .foregroundStyle(Theme.primary)
-                                        }
-                                }
-                            }
-                        }
-
-                        // Support documents indicator
-                        if !subtask.instructionAttachments.isEmpty {
-                            HStack(spacing: 2) {
-                                Image(systemName: "paperclip")
-                                    .font(.system(size: 9))
-                                Text("\(subtask.instructionAttachments.count)")
-                                    .font(.system(size: 11))
-                            }
-                            .foregroundStyle(Theme.primary)
-                        }
-
-                        // Due date
-                        if let dueDate = subtask.dueDate {
-                            HStack(spacing: 2) {
-                                Image(systemName: "calendar")
-                                    .font(.system(size: 9))
-                                Text(formatDueDate(dueDate))
-                                    .font(.system(size: 11))
-                            }
-                            .foregroundStyle(subtask.isOverdue ? .red : .secondary)
-                        }
-
-                        // Unread comments indicator
-                        let unreadCount = viewModel.unreadCount(for: subtask, in: task)
-                        if unreadCount > 0 {
-                            HStack(spacing: 2) {
-                                Image(systemName: "bubble.left.fill")
-                                    .font(.system(size: 8))
-                                Text("\(unreadCount)")
-                                    .font(.system(size: 10))
-                            }
-                            .foregroundStyle(.white)
-                            .padding(.horizontal, 5)
-                            .padding(.vertical, 2)
-                            .background(Theme.primary)
-                            .clipShape(Capsule())
-                        }
-                    }
-                }
-                .frame(maxWidth: .infinity, alignment: .leading)
+                Image(systemName: "info.circle")
+                    .font(.system(size: 18))
+                    .foregroundStyle(Theme.primary)
+                    .frame(width: 28, height: 28)
             }
             .buttonStyle(.plain)
         }
