@@ -81,8 +81,8 @@ struct ProjectChatView: View {
                 .presentationDetents([.medium, .large])
                 .presentationDragIndicator(.visible)
         }
-        .sheet(item: $selectedTaskForInfo) { task in
-            TaskInfoSheet(task: task, viewModel: viewModel)
+        .fullScreenCover(item: $selectedTaskForInfo) { task in
+            UnifiedTaskDetailView(task: task, viewModel: viewModel)
         }
         .sheet(item: $selectedPendingTask) { task in
             NewTaskInboxDetailSheet(
@@ -98,23 +98,12 @@ struct ProjectChatView: View {
                 }
             )
         }
-        .sheet(isPresented: Binding(
+        .fullScreenCover(isPresented: Binding(
             get: { selectedSubtaskForInfo != nil },
             set: { if !$0 { selectedSubtaskForInfo = nil } }
         )) {
             if let info = selectedSubtaskForInfo {
-                SubtaskInfoSheet(
-                    subtask: info.subtask,
-                    task: info.task,
-                    viewModel: viewModel,
-                    onNavigateToParentTask: { parentTask in
-                        selectedSubtaskForInfo = nil
-                        DispatchQueue.main.asyncAfter(deadline: .now() + 0.3) {
-                            taskToExpandInDrawer = parentTask.id
-                            showingTaskDrawer = true
-                        }
-                    }
-                )
+                UnifiedTaskDetailView(task: info.task, viewModel: viewModel)
             }
         }
         .sheet(isPresented: $showingAttachmentOptions) {

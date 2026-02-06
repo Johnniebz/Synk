@@ -169,110 +169,105 @@ struct SimpleTaskRowView: View {
             }
             .buttonStyle(.plain)
 
-            // Task title and info
-            VStack(alignment: .leading, spacing: 4) {
-                Text(task.title)
-                    .font(.system(size: 16))
-                    .strikethrough(task.status == .done)
-                    .foregroundStyle(task.status == .done ? .secondary : .primary)
-                    .lineLimit(2)
-                    .multilineTextAlignment(.leading)
-
-                HStack(spacing: 8) {
-                    // Assignees
-                    if !task.assignees.isEmpty {
-                        HStack(spacing: -6) {
-                            ForEach(task.assignees.prefix(3)) { assignee in
-                                Circle()
-                                    .fill(Theme.primaryLight)
-                                    .frame(width: 20, height: 20)
-                                    .overlay {
-                                        Text(assignee.avatarInitials)
-                                            .font(.system(size: 8, weight: .medium))
-                                            .foregroundStyle(Theme.primary)
-                                    }
-                                    .overlay(
-                                        Circle()
-                                            .stroke(Color(uiColor: .systemBackground), lineWidth: 1)
-                                    )
-                            }
-                        }
-
-                        let names = task.assignees.prefix(2).map { $0.displayFirstName }
-                        let displayText = task.assignees.count > 2
-                            ? "\(names.joined(separator: ", ")) +\(task.assignees.count - 2)"
-                            : names.joined(separator: ", ")
-                        Text(displayText)
-                            .font(.system(size: 12))
-                            .foregroundStyle(.secondary)
-                    }
-
-                    // Subtask progress
-                    if progress.total > 0 {
-                        HStack(spacing: 4) {
-                            Image(systemName: "checklist")
-                                .font(.system(size: 10))
-                            Text("\(progress.completed)/\(progress.total)")
-                                .font(.system(size: 12))
-                        }
-                        .foregroundStyle(progress.completed == progress.total ? .green : .secondary)
-                    }
-
-                    // Due date
-                    if let dueDate = task.dueDate {
-                        HStack(spacing: 2) {
-                            Image(systemName: "calendar")
-                                .font(.system(size: 10))
-                            Text(formatDueDate(dueDate))
-                                .font(.system(size: 12))
-                        }
-                        .foregroundStyle(task.isOverdue ? .red : .secondary)
-                    }
-
-                    // Attachments indicator
-                    let instructionCount = task.attachments.filter { $0.isInstruction }.count
-                    if instructionCount > 0 {
-                        HStack(spacing: 2) {
-                            Image(systemName: "paperclip")
-                                .font(.system(size: 10))
-                            Text("\(instructionCount)")
-                                .font(.system(size: 12))
-                        }
-                        .foregroundStyle(Theme.primary)
-                    }
-
-                    // Unread comments indicator
-                    let unreadCount = viewModel.unreadCount(for: task)
-                    if unreadCount > 0 {
-                        HStack(spacing: 2) {
-                            Image(systemName: "bubble.left.fill")
-                                .font(.system(size: 10))
-                            Text("\(unreadCount)")
-                                .font(.system(size: 12))
-                        }
-                        .foregroundStyle(.white)
-                        .padding(.horizontal, 6)
-                        .padding(.vertical, 2)
-                        .background(Theme.primary)
-                        .clipShape(Capsule())
-                    }
-                }
-            }
-            .frame(maxWidth: .infinity, alignment: .leading)
-
-            // Info button (i) - opens unified task detail
+            // Task title and info - tappable to open detail
             Button {
                 showingTaskDetail = true
             } label: {
-                Image(systemName: "info.circle")
-                    .font(.system(size: 20))
-                    .foregroundStyle(Theme.primary)
-                    .frame(width: 32, height: 32)
+                VStack(alignment: .leading, spacing: 4) {
+                    Text(task.title)
+                        .font(.system(size: 16))
+                        .strikethrough(task.status == .done)
+                        .foregroundStyle(task.status == .done ? .secondary : .primary)
+                        .lineLimit(2)
+                        .multilineTextAlignment(.leading)
+
+                    HStack(spacing: 8) {
+                        // Assignees
+                        if !task.assignees.isEmpty {
+                            HStack(spacing: -6) {
+                                ForEach(task.assignees.prefix(3)) { assignee in
+                                    Circle()
+                                        .fill(Theme.primaryLight)
+                                        .frame(width: 20, height: 20)
+                                        .overlay {
+                                            Text(assignee.avatarInitials)
+                                                .font(.system(size: 8, weight: .medium))
+                                                .foregroundStyle(Theme.primary)
+                                        }
+                                        .overlay(
+                                            Circle()
+                                                .stroke(Color(uiColor: .systemBackground), lineWidth: 1)
+                                        )
+                                }
+                            }
+
+                            let names = task.assignees.prefix(2).map { $0.displayFirstName }
+                            let displayText = task.assignees.count > 2
+                                ? "\(names.joined(separator: ", ")) +\(task.assignees.count - 2)"
+                                : names.joined(separator: ", ")
+                            Text(displayText)
+                                .font(.system(size: 12))
+                                .foregroundStyle(.secondary)
+                        }
+
+                        // Subtask progress
+                        if progress.total > 0 {
+                            HStack(spacing: 4) {
+                                Image(systemName: "checklist")
+                                    .font(.system(size: 10))
+                                Text("\(progress.completed)/\(progress.total)")
+                                    .font(.system(size: 12))
+                            }
+                            .foregroundStyle(progress.completed == progress.total ? .green : .secondary)
+                        }
+
+                        // Due date
+                        if let dueDate = task.dueDate {
+                            HStack(spacing: 2) {
+                                Image(systemName: "calendar")
+                                    .font(.system(size: 10))
+                                Text(formatDueDate(dueDate))
+                                    .font(.system(size: 12))
+                            }
+                            .foregroundStyle(task.isOverdue ? .red : .secondary)
+                        }
+
+                        // Attachments indicator
+                        let instructionCount = task.attachments.filter { $0.isInstruction }.count
+                        if instructionCount > 0 {
+                            HStack(spacing: 2) {
+                                Image(systemName: "paperclip")
+                                    .font(.system(size: 10))
+                                Text("\(instructionCount)")
+                                    .font(.system(size: 12))
+                            }
+                            .foregroundStyle(Theme.primary)
+                        }
+
+                        // Unread comments indicator
+                        let unreadCount = viewModel.unreadCount(for: task)
+                        if unreadCount > 0 {
+                            HStack(spacing: 2) {
+                                Image(systemName: "bubble.left.fill")
+                                    .font(.system(size: 10))
+                                Text("\(unreadCount)")
+                                    .font(.system(size: 12))
+                            }
+                            .foregroundStyle(.white)
+                            .padding(.horizontal, 6)
+                            .padding(.vertical, 2)
+                            .background(Theme.primary)
+                            .clipShape(Capsule())
+                        }
+                    }
+                }
+                .frame(maxWidth: .infinity, alignment: .leading)
             }
             .buttonStyle(.plain)
         }
         .padding(.vertical, 4)
-        .sheet(isPresented: $showingTaskDetail) {
+        .contentShape(Rectangle())
+        .fullScreenCover(isPresented: $showingTaskDetail) {
             UnifiedTaskDetailView(task: task, viewModel: viewModel)
         }
     }
