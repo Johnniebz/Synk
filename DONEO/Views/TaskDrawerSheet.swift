@@ -26,12 +26,11 @@ struct TaskDrawerSheet: View {
                     Button {
                         dismiss()
                     } label: {
-                        Image(systemName: "xmark")
-                            .font(.system(size: 14, weight: .semibold))
-                            .foregroundStyle(.secondary)
-                            .padding(8)
-                            .background(Color(uiColor: .secondarySystemBackground))
-                            .clipShape(Circle())
+                        HStack(spacing: 4) {
+                            Image(systemName: "chevron.left")
+                                .font(.system(size: 16, weight: .semibold))
+                        }
+                        .foregroundStyle(Theme.primary)
                     }
                 }
             }

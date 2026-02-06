@@ -68,10 +68,8 @@ struct ProjectChatView: View {
             }
         }
         .toolbar(.hidden, for: .tabBar)
-        .sheet(isPresented: $showingTaskDrawer) {
+        .fullScreenCover(isPresented: $showingTaskDrawer) {
             TaskDrawerSheet(viewModel: viewModel)
-                .presentationDetents([.large])
-                .presentationDragIndicator(.visible)
         }
         .sheet(isPresented: $showingProjectInfo) {
             ProjectInfoView(viewModel: viewModel)
