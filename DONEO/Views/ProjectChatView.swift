@@ -6,37 +6,28 @@ import ContactsUI
 struct ProjectChatView: View {
     @State private var viewModel: ProjectChatViewModel
     @State private var showingProjectInfo = false
-    @State private var showingTaskDrawer = false
+    @State private var showingAddTask = false
     @State private var showingNewTasksInbox = false
-    @State private var selectedTaskForInfo: DONEOTask? = nil
-    @State private var selectedPendingTask: DONEOTask? = nil // For assignment screen
-    @State private var selectedSubtaskForInfo: (subtask: Subtask, task: DONEOTask)? = nil
-    @State private var showingAttachmentOptions = false
-    @State private var taskToExpandInDrawer: UUID? = nil
-    @FocusState private var isInputFocused: Bool
+    @State private var selectedTask: DONEOTask? = nil
     @Environment(\.dismiss) private var dismiss
-
-    // Media picker states
-    @State private var showingCamera = false
-    @State private var showingPhotoPicker = false
-    @State private var showingDocumentPicker = false
-    @State private var showingContactPicker = false
-    @State private var selectedPhotoItems: [PhotosPickerItem] = []
-
-    // Voice recording states
-    @State private var isRecording = false
-    @State private var audioRecorder: AVAudioRecorder?
-    @State private var recordingURL: URL?
 
     init(project: Project) {
         _viewModel = State(initialValue: ProjectChatViewModel(project: project))
     }
 
     var body: some View {
-        chatMessagesArea
-            .safeAreaInset(edge: .bottom) {
-                taskButtonBar
+        VStack(spacing: 0) {
+            // Task list with activity previews
+            if viewModel.tasks.isEmpty {
+                emptyStateView
+            } else {
+                taskListView
             }
+
+            // Add task button at bottom
+            addTaskButton
+        }
+        .background(Color(uiColor: .systemGroupedBackground))
         .navigationBarTitleDisplayMode(.inline)
         .toolbar {
             ToolbarItem(placement: .principal) {
@@ -53,7 +44,6 @@ struct ProjectChatView: View {
                                 .foregroundStyle(Theme.primary)
                                 .padding(.trailing, 6)
 
-                            // Badge
                             Text("\(viewModel.newTasksCount)")
                                 .font(.system(size: 10, weight: .bold))
                                 .foregroundStyle(.white)
@@ -68,9 +58,6 @@ struct ProjectChatView: View {
             }
         }
         .toolbar(.hidden, for: .tabBar)
-        .fullScreenCover(isPresented: $showingTaskDrawer) {
-            TaskDrawerSheet(viewModel: viewModel)
-        }
         .sheet(isPresented: $showingProjectInfo) {
             ProjectInfoView(viewModel: viewModel)
         }
@@ -79,145 +66,15 @@ struct ProjectChatView: View {
                 .presentationDetents([.medium, .large])
                 .presentationDragIndicator(.visible)
         }
-        .fullScreenCover(item: $selectedTaskForInfo) { task in
+        .sheet(isPresented: $showingAddTask) {
+            AddTaskSheet(viewModel: viewModel)
+        }
+        .fullScreenCover(item: $selectedTask) { task in
             UnifiedTaskDetailView(task: task, viewModel: viewModel)
         }
-        .sheet(item: $selectedPendingTask) { task in
-            NewTaskInboxDetailSheet(
-                task: task,
-                projectName: viewModel.project.name,
-                viewModel: viewModel,
-                onAccept: {
-                    viewModel.acceptTask(task, message: nil)
-                    selectedPendingTask = nil
-                },
-                onCancel: {
-                    selectedPendingTask = nil
-                }
-            )
-        }
-        .fullScreenCover(isPresented: Binding(
-            get: { selectedSubtaskForInfo != nil },
-            set: { if !$0 { selectedSubtaskForInfo = nil } }
-        )) {
-            if let info = selectedSubtaskForInfo {
-                UnifiedTaskDetailView(task: info.task, viewModel: viewModel)
-            }
-        }
-        .sheet(isPresented: $showingAttachmentOptions) {
-            ChatAttachmentOptionsSheet(
-                viewModel: viewModel,
-                onSelectPhotos: {
-                    showingAttachmentOptions = false
-                    DispatchQueue.main.asyncAfter(deadline: .now() + 0.3) {
-                        showingPhotoPicker = true
-                    }
-                },
-                onSelectDocuments: {
-                    showingAttachmentOptions = false
-                    DispatchQueue.main.asyncAfter(deadline: .now() + 0.3) {
-                        showingDocumentPicker = true
-                    }
-                },
-                onSelectContacts: {
-                    showingAttachmentOptions = false
-                    DispatchQueue.main.asyncAfter(deadline: .now() + 0.3) {
-                        showingContactPicker = true
-                    }
-                }
-            )
-                .presentationDetents([.height(200)])
-                .presentationDragIndicator(.visible)
-        }
-        .fullScreenCover(isPresented: $showingCamera) {
-            CameraImagePicker { image in
-                if let image = image {
-                    handleCapturedImage(image)
-                }
-            }
-            .ignoresSafeArea()
-        }
-        .photosPicker(isPresented: $showingPhotoPicker, selection: $selectedPhotoItems, maxSelectionCount: 10, matching: .images)
-        .onChange(of: selectedPhotoItems) { _, newItems in
-            Task {
-                for item in newItems {
-                    if let data = try? await item.loadTransferable(type: Data.self),
-                       let image = UIImage(data: data) {
-                        handleCapturedImage(image)
-                    }
-                }
-                selectedPhotoItems = []
-            }
-        }
-        .sheet(isPresented: $showingDocumentPicker) {
-            DocumentPicker { urls in
-                for url in urls {
-                    handleSelectedDocument(url)
-                }
-            }
-        }
-        .sheet(isPresented: $showingContactPicker) {
-            ContactPicker { contact in
-                handleSelectedContact(contact)
-            }
-        }
     }
 
-    // MARK: - Media Handling
-
-    private func handleCapturedImage(_ image: UIImage) {
-        if let imageData = image.jpegData(compressionQuality: 0.8) {
-            viewModel.sendImageMessage(imageData: imageData)
-        }
-    }
-
-    private func handleSelectedDocument(_ url: URL) {
-        let fileName = url.lastPathComponent
-        viewModel.sendSystemMessage("Compartio un documento: \(fileName)")
-    }
-
-    private func handleSelectedContact(_ contact: CNContact) {
-        let name = "\(contact.givenName) \(contact.familyName)".trimmingCharacters(in: .whitespaces)
-        viewModel.sendSystemMessage("Compartio un contacto: \(name)")
-    }
-
-    private func startRecording() {
-        let audioSession = AVAudioSession.sharedInstance()
-        do {
-            try audioSession.setCategory(.playAndRecord, mode: .default)
-            try audioSession.setActive(true)
-
-            let documentsPath = FileManager.default.urls(for: .documentDirectory, in: .userDomainMask)[0]
-            let audioFilename = documentsPath.appendingPathComponent("recording_\(Date().timeIntervalSince1970).m4a")
-            recordingURL = audioFilename
-
-            let settings: [String: Any] = [
-                AVFormatIDKey: Int(kAudioFormatMPEG4AAC),
-                AVSampleRateKey: 44100,
-                AVNumberOfChannelsKey: 1,
-                AVEncoderAudioQualityKey: AVAudioQuality.high.rawValue
-            ]
-
-            audioRecorder = try AVAudioRecorder(url: audioFilename, settings: settings)
-            audioRecorder?.record()
-            isRecording = true
-        } catch {
-            print("Failed to start recording: \(error)")
-        }
-    }
-
-    private func stopRecording() {
-        audioRecorder?.stop()
-        isRecording = false
-
-        if let url = recordingURL {
-            viewModel.sendSystemMessage("Envio un mensaje de voz")
-            // In a real app, you would upload the audio file
-            _ = url
-        }
-    }
-
-    // MARK: - Header View (Project name + member count)
+    // MARK: - Header
 
     private var headerView: some View {
         Button {
@@ -237,566 +94,288 @@ struct ProjectChatView: View {
         .buttonStyle(.plain)
     }
 
-    // MARK: - Chat Messages Area
-
-    private var chatMessagesArea: some View {
-        ScrollViewReader { proxy in
-            ScrollView {
-                LazyVStack(spacing: 2) {
-                    if viewModel.messages.isEmpty {
-                        emptyStateView
-                    } else {
-                        ForEach(Array(viewModel.messages.enumerated()), id: \.element.id) { index, message in
-                            let previousMessage = index > 0 ? viewModel.messages[index - 1] : nil
-                            let nextMessage = index < viewModel.messages.count - 1 ? viewModel.messages[index + 1] : nil
-
-                            // Determine if we should show sender name (first in group or different sender)
-                            let isFirstInGroup = previousMessage == nil ||
-                                previousMessage?.sender.id != message.sender.id ||
-                                previousMessage?.messageType != .regular ||
-                                message.messageType != .regular
-
-                            // Determine if this is last in sender group (for bottom padding)
-                            let isLastInGroup = nextMessage == nil ||
-                                nextMessage?.sender.id != message.sender.id ||
-                                nextMessage?.messageType != .regular ||
-                                message.messageType != .regular
-
-                            // Determine if task context changed from previous message
-                            let previousTaskId = previousMessage?.referencedTask?.taskId ?? previousMessage?.referencedSubtask?.subtaskId
-                            let currentTaskId = message.referencedTask?.taskId ?? message.referencedSubtask?.subtaskId
-                            let showTaskContext = currentTaskId != previousTaskId || isFirstInGroup
-
-                            ProjectMessageBubble(
-                                message: message,
-                                showSenderName: isFirstInGroup,
-                                showTaskContext: showTaskContext,
-                                isLastInGroup: isLastInGroup,
-                                pendingTaskIds: Set(viewModel.newTasksForCurrentUser.map { $0.id }),
-                                onTaskTap: { taskRef in
-                                    // Check if task is pending assignment for current user
-                                    if let task = viewModel.project.tasks.first(where: { $0.id == taskRef.taskId }) {
-                                        if task.isNew(for: viewModel.currentUser.id) {
-                                            // Pending assignment → show assignment screen
-                                            selectedPendingTask = task
-                                        } else {
-                                            // Active task → show task info screen
-                                            selectedTaskForInfo = task
-                                        }
-                                    }
-                                },
-                                onSubtaskTap: { subtaskRef in
-                                    // Find the task and subtask, then open SubtaskInfoSheet
-                                    for task in viewModel.project.tasks {
-                                        if let subtask = task.subtasks.first(where: { $0.id == subtaskRef.subtaskId }) {
-                                            selectedSubtaskForInfo = (subtask, task)
-                                            break
-                                        }
-                                    }
-                                },
-                                onReaction: { emoji in
-                                    viewModel.addReaction(emoji, to: message)
-                                }
-                            )
-                            .id(message.id)
-                        }
-                    }
-                }
-                .padding()
-            }
-            .background(Theme.chatBackground)
-            .onChange(of: viewModel.messages.count) { _, _ in
-                if let lastMessage = viewModel.messages.last {
-                    withAnimation {
-                        proxy.scrollTo(lastMessage.id, anchor: .bottom)
-                    }
-                }
-            }
-        }
-    }
+    // MARK: - Empty State
 
     private var emptyStateView: some View {
-        VStack(spacing: 12) {
-            Image(systemName: "bubble.left.and.bubble.right")
-                .font(.system(size: 40))
-                .foregroundStyle(.tertiary)
+        VStack(spacing: 16) {
+            Spacer()
 
-            Text("Sin mensajes aun")
-                .font(.system(size: 16, weight: .medium))
+            Image(systemName: "checklist")
+                .font(.system(size: 56))
+                .foregroundStyle(Color.secondary.opacity(0.3))
+
+            Text("Sin tareas aún")
+                .font(.system(size: 20, weight: .semibold))
                 .foregroundStyle(.secondary)
 
-            Text("Abre una tarea para iniciar una discusion")
-                .font(.system(size: 14))
-                .foregroundStyle(.tertiary)
+            Text("Crea tu primera tarea para comenzar\na colaborar con tu equipo")
+                .font(.system(size: 15))
+                .foregroundStyle(Color.secondary.opacity(0.7))
+                .multilineTextAlignment(.center)
 
-            // Quick task button
-            Button {
-                showingTaskDrawer = true
-            } label: {
-                HStack {
-                    Image(systemName: "checklist")
-                    Text("Ver Tareas")
+            Spacer()
+        }
+        .frame(maxWidth: .infinity)
+    }
+
+    // MARK: - Task List
+
+    private var taskListView: some View {
+        ScrollView {
+            LazyVStack(spacing: 0) {
+                // Pending tasks
+                if !viewModel.pendingTasks.isEmpty {
+                    ForEach(viewModel.pendingTasks.sorted { task1, task2 in
+                        // Sort by most recent activity
+                        let date1 = lastActivityDate(for: task1)
+                        let date2 = lastActivityDate(for: task2)
+                        return date1 > date2
+                    }) { task in
+                        TaskActivityRow(
+                            task: task,
+                            viewModel: viewModel,
+                            onTap: {
+                                selectedTask = task
+                            }
+                        )
+                    }
                 }
-                .font(.system(size: 14, weight: .medium))
-                .padding(.horizontal, 16)
-                .padding(.vertical, 8)
-                .background(Theme.primaryLight)
-                .foregroundStyle(Theme.primary)
-                .clipShape(Capsule())
+
+                // Completed tasks section
+                if !viewModel.completedTasks.isEmpty {
+                    HStack {
+                        Text("Completadas")
+                            .font(.system(size: 13, weight: .medium))
+                            .foregroundStyle(.secondary)
+                        Spacer()
+                    }
+                    .padding(.horizontal, 20)
+                    .padding(.top, 24)
+                    .padding(.bottom, 8)
+
+                    ForEach(viewModel.completedTasks) { task in
+                        TaskActivityRow(
+                            task: task,
+                            viewModel: viewModel,
+                            onTap: {
+                                selectedTask = task
+                            }
+                        )
+                    }
+                }
             }
             .padding(.top, 8)
         }
-        .frame(maxWidth: .infinity)
-        .padding(.top, 60)
     }
 
-    // MARK: - Reference Preview
+    // MARK: - Add Task Button
 
-    private var referencePreview: some View {
-        HStack(spacing: 8) {
-            RoundedRectangle(cornerRadius: 1.5)
-                .fill(Theme.primary)
-                .frame(width: 3, height: 32)
-
-            VStack(alignment: .leading, spacing: 1) {
-                if let quoted = viewModel.quotedMessage {
-                    Text("Respondiendo a \(quoted.senderName)")
-                        .font(.system(size: 11, weight: .medium))
-                        .foregroundStyle(Theme.primary)
-                    Text(quoted.content)
-                        .font(.system(size: 12))
-                        .foregroundStyle(.secondary)
-                        .lineLimit(1)
-                } else if let subtaskRef = viewModel.referencedSubtask {
-                    Text("Subtarea")
-                        .font(.system(size: 11, weight: .medium))
-                        .foregroundStyle(Theme.primary)
-                    Text(subtaskRef.subtaskTitle)
-                        .font(.system(size: 12))
-                        .foregroundStyle(.secondary)
-                        .lineLimit(1)
-                } else if let taskRef = viewModel.referencedTask {
-                    Text("Tarea")
-                        .font(.system(size: 11, weight: .medium))
-                        .foregroundStyle(Theme.primary)
-                    Text(taskRef.taskTitle)
-                        .font(.system(size: 12))
-                        .foregroundStyle(.secondary)
-                        .lineLimit(1)
-                }
-            }
-
-            Spacer()
-
-            Button {
-                viewModel.clearAllReferences()
-            } label: {
-                Image(systemName: "xmark.circle.fill")
-                    .font(.system(size: 16))
-                    .foregroundStyle(.tertiary)
-            }
-        }
-        .padding(.horizontal, 12)
-        .padding(.vertical, 6)
-        .background(Color(uiColor: .secondarySystemBackground))
-    }
-
-    // MARK: - Task Button Bar
-
-    private var taskButtonBar: some View {
+    private var addTaskButton: some View {
         Button {
-            showingTaskDrawer = true
+            showingAddTask = true
         } label: {
-            HStack(spacing: 10) {
-                Image(systemName: "checklist")
-                    .font(.system(size: 20, weight: .semibold))
-
-                Text("Ver Tareas")
-                    .font(.system(size: 16, weight: .semibold))
+            HStack {
+                Image(systemName: "plus.circle.fill")
+                Text("Agregar Tarea")
+                    .fontWeight(.semibold)
             }
-            .foregroundStyle(Theme.primary)
             .frame(maxWidth: .infinity)
             .padding(.vertical, 14)
-            .background(Theme.primaryLight)
-            .clipShape(RoundedRectangle(cornerRadius: 16))
+            .background(Theme.primary)
+            .foregroundColor(.white)
+            .clipShape(RoundedRectangle(cornerRadius: 12))
         }
-        .buttonStyle(.plain)
         .padding(.horizontal, 16)
         .padding(.vertical, 12)
-        .background(.thinMaterial)
+        .background(Color(uiColor: .systemBackground))
+    }
+
+    // MARK: - Helpers
+
+    private func lastActivityDate(for task: DONEOTask) -> Date {
+        // Get the most recent message for this task
+        let taskMessages = viewModel.project.messages.filter { message in
+            if message.referencedTask?.taskId == task.id { return true }
+            if let subtaskRef = message.referencedSubtask,
+               task.subtasks.contains(where: { $0.id == subtaskRef.subtaskId }) {
+                return true
+            }
+            return false
+        }
+        return taskMessages.map { $0.timestamp }.max() ?? task.createdAt
     }
 }
 
-// MARK: - Project Message Bubble
+// MARK: - Task Activity Row
 
-struct ProjectMessageBubble: View {
-    let message: Message
-    var showSenderName: Bool = true
-    var showTaskContext: Bool = true
-    var isLastInGroup: Bool = true
-    var pendingTaskIds: Set<UUID> = []
-    var onTaskTap: ((TaskReference) -> Void)? = nil
-    var onSubtaskTap: ((SubtaskReference) -> Void)? = nil
-    var onReaction: ((String) -> Void)? = nil
+struct TaskActivityRow: View {
+    let task: DONEOTask
+    @Bindable var viewModel: ProjectChatViewModel
+    let onTap: () -> Void
 
-    @State private var showingEmojiPicker = false
+    // Get latest message for this task
+    private var latestMessage: Message? {
+        viewModel.project.messages
+            .filter { message in
+                if message.referencedTask?.taskId == task.id { return true }
+                if let subtaskRef = message.referencedSubtask,
+                   task.subtasks.contains(where: { $0.id == subtaskRef.subtaskId }) {
+                    return true
+                }
+                return false
+            }
+            .sorted { $0.timestamp > $1.timestamp }
+            .first
+    }
 
-    private let quickEmojis = ["👍", "❤️", "😂", "😮", "😢", "🙏"]
+    // Check if there are unread messages
+    private var hasUnread: Bool {
+        let taskMessages = viewModel.project.messages.filter { message in
+            if message.referencedTask?.taskId == task.id { return true }
+            if let subtaskRef = message.referencedSubtask,
+               task.subtasks.contains(where: { $0.id == subtaskRef.subtaskId }) {
+                return true
+            }
+            return false
+        }
+        return taskMessages.contains { !$0.isRead(by: viewModel.currentUser.id) }
+    }
+
+    // Unread count
+    private var unreadCount: Int {
+        viewModel.unreadCount(for: task)
+    }
+
+    // Subtask progress
+    private var progress: (completed: Int, total: Int) {
+        viewModel.subtaskProgress(for: task)
+    }
 
     var body: some View {
-        switch message.messageType {
-        case .subtaskCompleted(let subtaskRef):
-            subtaskStatusMessage(completed: true, subtaskRef: subtaskRef)
-        case .subtaskReopened(let subtaskRef):
-            subtaskStatusMessage(completed: false, subtaskRef: subtaskRef)
-        case .regular:
-            regularMessage
-        }
-    }
+        Button(action: onTap) {
+            HStack(spacing: 14) {
+                // Checkbox
+                Image(systemName: task.status == .done ? "checkmark.circle.fill" : "circle")
+                    .font(.system(size: 24))
+                    .foregroundStyle(task.status == .done ? .green : Color.secondary.opacity(0.4))
 
-    private func subtaskStatusMessage(completed: Bool, subtaskRef: SubtaskReference) -> some View {
-        HStack(spacing: 8) {
-            Spacer()
-
-            HStack(spacing: 6) {
-                Image(systemName: completed ? "checkmark.circle.fill" : "arrow.uturn.backward.circle.fill")
-                    .font(.system(size: 14))
-                    .foregroundStyle(completed ? Theme.success : Theme.warning)
-
-                Text(message.sender.displayFirstName)
-                    .font(.system(size: 13, weight: .medium))
-                    .foregroundStyle(.secondary)
-
-                Text(completed ? "completo" : "reabrio")
-                    .font(.system(size: 13))
-                    .foregroundStyle(.secondary)
-
-                Button {
-                    onSubtaskTap?(subtaskRef)
-                } label: {
-                    Text("\"\(subtaskRef.subtaskTitle)\"")
-                        .font(.system(size: 13, weight: .medium))
-                        .foregroundStyle(Theme.primary)
-                }
-                .buttonStyle(.plain)
-            }
-            .padding(.horizontal, 12)
-            .padding(.vertical, 6)
-            .background(Color(uiColor: .secondarySystemBackground))
-            .clipShape(Capsule())
-
-            Spacer()
-        }
-        .padding(.vertical, 8)
-    }
-
-    private var regularMessage: some View {
-        HStack(alignment: .bottom) {
-            if message.isFromCurrentUser {
-                Spacer(minLength: 60)
-            }
-
-            VStack(alignment: message.isFromCurrentUser ? .trailing : .leading, spacing: 2) {
-                // Sender name - only show if first in group
-                if !message.isFromCurrentUser && showSenderName {
-                    Text(message.sender.name)
-                        .font(.system(size: 12, weight: .medium))
-                        .foregroundStyle(.secondary)
-                        .padding(.top, 8)
-                        .padding(.bottom, 2)
-                }
-
-                // Task/Subtask context - shown above bubble only when context changes
-                if showTaskContext {
-                    if let subtaskRef = message.referencedSubtask {
-                        // Subtask - show with arrow to indicate it's nested
-                        HStack(spacing: 3) {
-                            Image(systemName: "arrow.turn.down.right")
-                                .font(.system(size: 9))
-                            Text("Subtarea:")
-                                .font(.system(size: 10))
-                                .foregroundStyle(.secondary)
-                            Text(subtaskRef.subtaskTitle)
-                                .font(.system(size: 11, weight: .medium))
-                                .lineLimit(1)
-                        }
-                        .foregroundStyle(Theme.primary)
-                        .padding(.leading, message.isFromCurrentUser ? 0 : 4)
-                        .padding(.trailing, message.isFromCurrentUser ? 4 : 0)
-                    } else if let taskRef = message.referencedTask {
-                        // Task - show with checklist icon
-                        HStack(spacing: 3) {
-                            Image(systemName: "checklist")
-                                .font(.system(size: 9))
-                            Text("Tarea:")
-                                .font(.system(size: 10))
-                                .foregroundStyle(.secondary)
-                            Text(taskRef.taskTitle)
-                                .font(.system(size: 11, weight: .medium))
-                                .lineLimit(1)
-
-                            // Badge for pending tasks
-                            if pendingTaskIds.contains(taskRef.taskId) {
-                                Text("Nueva")
-                                    .font(.system(size: 9, weight: .bold))
-                                    .foregroundStyle(.white)
-                                    .padding(.horizontal, 5)
-                                    .padding(.vertical, 2)
-                                    .background(.orange)
-                                    .clipShape(Capsule())
-                            }
-                        }
-                        .foregroundStyle(Theme.primary)
-                        .padding(.leading, message.isFromCurrentUser ? 0 : 4)
-                        .padding(.trailing, message.isFromCurrentUser ? 4 : 0)
-                    }
-                }
-
-                // Message bubble
+                // Content
                 VStack(alignment: .leading, spacing: 4) {
-                    // Quoted message
-                    if let quoted = message.quotedMessage {
-                        HStack(spacing: 6) {
-                            RoundedRectangle(cornerRadius: 1.5)
-                                .fill(message.isFromCurrentUser ? Color.white.opacity(0.5) : Theme.primary.opacity(0.5))
-                                .frame(width: 3)
-
-                            VStack(alignment: .leading, spacing: 2) {
-                                Text(quoted.senderName)
-                                    .font(.system(size: 11, weight: .semibold))
-                                    .foregroundStyle(message.isFromCurrentUser ? .white.opacity(0.9) : Theme.primary)
-                                Text(quoted.content)
-                                    .font(.system(size: 12))
-                                    .foregroundStyle(message.isFromCurrentUser ? .white.opacity(0.7) : .secondary)
-                                    .lineLimit(2)
-                            }
-                        }
-                        .padding(8)
-                        .background(
-                            message.isFromCurrentUser
-                                ? Color.white.opacity(0.15)
-                                : Color(uiColor: .systemGray4)
-                        )
-                        .clipShape(RoundedRectangle(cornerRadius: 8))
-                    }
-
-                    // Attachment preview
-                    if let attachment = message.attachment {
-                        attachmentPreview(attachment)
-                    }
-
-                    // Message content (hide if just camera emoji for image)
-                    if message.content != "📷" || message.attachment == nil {
-                        Text(message.content)
-                            .font(.system(size: 15))
-                    }
-                }
-                .padding(.horizontal, 12)
-                .padding(.vertical, 8)
-                .background(
-                    message.isFromCurrentUser
-                    ? Theme.primary
-                    : Color(uiColor: .systemGray5)
-                )
-                .foregroundStyle(message.isFromCurrentUser ? .white : .primary)
-                .clipShape(RoundedRectangle(cornerRadius: 16))
-
-                // Reactions display
-                if !message.reactions.isEmpty {
-                    HStack(spacing: 4) {
-                        ForEach(Array(message.groupedReactions.keys.sorted()), id: \.self) { emoji in
-                            if let reactions = message.groupedReactions[emoji] {
-                                HStack(spacing: 2) {
-                                    Text(emoji)
-                                        .font(.system(size: 14))
-                                    if reactions.count > 1 {
-                                        Text("\(reactions.count)")
-                                            .font(.system(size: 11))
-                                            .foregroundStyle(.secondary)
-                                    }
-                                }
-                                .padding(.horizontal, 6)
-                                .padding(.vertical, 2)
-                                .background(Color(uiColor: .systemGray5))
-                                .clipShape(Capsule())
-                                .onTapGesture {
-                                    onReaction?(emoji)
-                                }
-                            }
-                        }
-                    }
-                }
-
-                // Time - only show on last message in group
-                if isLastInGroup {
-                    Text(message.timestamp, style: .time)
-                        .font(.system(size: 11))
-                        .foregroundStyle(.tertiary)
-                }
-            }
-            .contentShape(Rectangle())
-            .onTapGesture {
-                // Tap to navigate to subtask if present, otherwise task
-                if let subtaskRef = message.referencedSubtask {
-                    onSubtaskTap?(subtaskRef)
-                } else if let taskRef = message.referencedTask {
-                    onTaskTap?(taskRef)
-                }
-            }
-            .onLongPressGesture {
-                showingEmojiPicker = true
-            }
-            .popover(isPresented: $showingEmojiPicker) {
-                emojiPickerView
-                    .presentationCompactAdaptation(.popover)
-            }
-
-            if !message.isFromCurrentUser {
-                Spacer(minLength: 60)
-            }
-        }
-        .padding(.bottom, isLastInGroup ? 8 : 0)
-    }
-
-    private var emojiPickerView: some View {
-        HStack(spacing: 12) {
-            ForEach(quickEmojis, id: \.self) { emoji in
-                Button {
-                    onReaction?(emoji)
-                    showingEmojiPicker = false
-                } label: {
-                    Text(emoji)
-                        .font(.system(size: 28))
-                }
-                .buttonStyle(.plain)
-            }
-        }
-        .padding(.horizontal, 16)
-        .padding(.vertical, 12)
-    }
-
-    @ViewBuilder
-    private func attachmentPreview(_ attachment: MessageAttachment) -> some View {
-        switch attachment.type {
-        case .image:
-            // Photo attachment - show actual image if available
-            if let imageData = attachment.imageData,
-               let uiImage = UIImage(data: imageData) {
-                Image(uiImage: uiImage)
-                    .resizable()
-                    .aspectRatio(contentMode: .fill)
-                    .frame(maxWidth: 220, maxHeight: 280)
-                    .clipShape(RoundedRectangle(cornerRadius: 12))
-            } else {
-                // Fallback if no image data
-                HStack(spacing: 8) {
-                    Image(systemName: "photo.fill")
-                        .font(.system(size: 24))
-                        .foregroundStyle(message.isFromCurrentUser ? .white.opacity(0.8) : Theme.primary)
-
-                    VStack(alignment: .leading, spacing: 2) {
-                        Text("Foto")
-                            .font(.system(size: 13, weight: .medium))
-                        Text(attachment.fileName)
-                            .font(.system(size: 11))
-                            .foregroundStyle(message.isFromCurrentUser ? .white.opacity(0.7) : .secondary)
+                    // Task title row
+                    HStack {
+                        Text(task.title)
+                            .font(.system(size: 16, weight: .medium))
+                            .foregroundStyle(task.status == .done ? .secondary : .primary)
                             .lineLimit(1)
+
+                        Spacer()
+
+                        // Time
+                        if let message = latestMessage {
+                            Text(formatTime(message.timestamp))
+                                .font(.system(size: 13))
+                                .foregroundStyle(.secondary)
+                        }
+                    }
+
+                    // Preview row
+                    HStack(spacing: 6) {
+                        // Latest message preview
+                        if let message = latestMessage {
+                            Text("\(message.sender.displayFirstName):")
+                                .font(.system(size: 14))
+                                .foregroundStyle(.secondary)
+
+                            Text(message.content)
+                                .font(.system(size: 14))
+                                .foregroundStyle(Color.secondary.opacity(0.8))
+                                .lineLimit(1)
+                        } else {
+                            Text("Sin mensajes")
+                                .font(.system(size: 14))
+                                .foregroundStyle(Color.secondary.opacity(0.5))
+                                .italic()
+                        }
+
+                        Spacer()
+
+                        // Subtask progress
+                        if progress.total > 0 {
+                            HStack(spacing: 3) {
+                                Image(systemName: "checklist")
+                                    .font(.system(size: 11))
+                                Text("\(progress.completed)/\(progress.total)")
+                                    .font(.system(size: 12, weight: .medium))
+                            }
+                            .foregroundStyle(progress.completed == progress.total ? .green : .secondary)
+                        }
+
+                        // Unread badge
+                        if unreadCount > 0 {
+                            Text("\(unreadCount)")
+                                .font(.system(size: 12, weight: .bold))
+                                .foregroundStyle(.white)
+                                .padding(.horizontal, 7)
+                                .padding(.vertical, 3)
+                                .background(Theme.primary)
+                                .clipShape(Capsule())
+                        }
                     }
                 }
-                .padding(10)
-                .background(
-                    message.isFromCurrentUser
-                        ? Color.white.opacity(0.15)
-                        : Color(uiColor: .systemGray4)
-                )
-                .clipShape(RoundedRectangle(cornerRadius: 10))
             }
+            .padding(.horizontal, 16)
+            .padding(.vertical, 14)
+            .background(Color(uiColor: .systemBackground))
+        }
+        .buttonStyle(.plain)
 
-        case .document:
-            // Document attachment
-            HStack(spacing: 8) {
-                Image(systemName: "doc.fill")
-                    .font(.system(size: 24))
-                    .foregroundStyle(message.isFromCurrentUser ? .white.opacity(0.8) : Theme.primary)
+        // Divider
+        Divider()
+            .padding(.leading, 54)
+    }
 
-                VStack(alignment: .leading, spacing: 2) {
-                    Text(attachment.fileName)
-                        .font(.system(size: 13, weight: .medium))
-                        .lineLimit(1)
-                    if attachment.fileSize > 0 {
-                        Text(ByteCountFormatter.string(fromByteCount: attachment.fileSize, countStyle: .file))
-                            .font(.system(size: 11))
-                            .foregroundStyle(message.isFromCurrentUser ? .white.opacity(0.7) : .secondary)
-                    }
-                }
-
-                Spacer()
-
-                Image(systemName: "arrow.down.circle")
-                    .font(.system(size: 20))
-                    .foregroundStyle(message.isFromCurrentUser ? .white.opacity(0.8) : Theme.primary)
-            }
-            .padding(10)
-            .background(
-                message.isFromCurrentUser
-                    ? Color.white.opacity(0.15)
-                    : Color(uiColor: .systemGray4)
-            )
-            .clipShape(RoundedRectangle(cornerRadius: 10))
-
-        case .video:
-            // Video attachment
-            HStack(spacing: 8) {
-                Image(systemName: "video.fill")
-                    .font(.system(size: 24))
-                    .foregroundStyle(message.isFromCurrentUser ? .white.opacity(0.8) : Theme.primary)
-
-                VStack(alignment: .leading, spacing: 2) {
-                    Text("Video")
-                        .font(.system(size: 13, weight: .medium))
-                    Text(attachment.fileName)
-                        .font(.system(size: 11))
-                        .foregroundStyle(message.isFromCurrentUser ? .white.opacity(0.7) : .secondary)
-                        .lineLimit(1)
-                }
-            }
-            .padding(10)
-            .background(
-                message.isFromCurrentUser
-                    ? Color.white.opacity(0.15)
-                    : Color(uiColor: .systemGray4)
-            )
-            .clipShape(RoundedRectangle(cornerRadius: 10))
-
-        case .contact:
-            // Contact attachment
-            HStack(spacing: 8) {
-                Image(systemName: "person.crop.circle.fill")
-                    .font(.system(size: 24))
-                    .foregroundStyle(message.isFromCurrentUser ? .white.opacity(0.8) : .green)
-
-                VStack(alignment: .leading, spacing: 2) {
-                    Text("Contacto")
-                        .font(.system(size: 13, weight: .medium))
-                    Text(attachment.fileName)
-                        .font(.system(size: 11))
-                        .foregroundStyle(message.isFromCurrentUser ? .white.opacity(0.7) : .secondary)
-                        .lineLimit(1)
-                }
-            }
-            .padding(10)
-            .background(
-                message.isFromCurrentUser
-                    ? Color.white.opacity(0.15)
-                    : Color(uiColor: .systemGray4)
-            )
-            .clipShape(RoundedRectangle(cornerRadius: 10))
+    private func formatTime(_ date: Date) -> String {
+        let calendar = Calendar.current
+        if calendar.isDateInToday(date) {
+            return date.formatted(.dateTime.hour().minute())
+        } else if calendar.isDateInYesterday(date) {
+            return "Ayer"
+        } else if calendar.isDate(date, equalTo: Date(), toGranularity: .weekOfYear) {
+            return date.formatted(.dateTime.weekday(.abbreviated))
+        } else {
+            return date.formatted(.dateTime.month(.abbreviated).day())
         }
     }
 }
 
-// MARK: - Project Info View
-
+#Preview {
+    NavigationStack {
+        ProjectChatView(project: Project(
+            name: "Renovacion Centro",
+            members: MockDataService.allUsers,
+            tasks: [
+                DONEOTask(
+                    title: "Pedir materiales para cocina",
+                    assignees: [MockDataService.allUsers[0]],
+                    status: .pending,
+                    subtasks: [
+                        Subtask(title: "Obtener cotizaciones", isDone: true),
+                        Subtask(title: "Comparar precios", isDone: false)
+                    ]
+                ),
+                DONEOTask(
+                    title: "Coordinar con inspector",
+                    assignees: [MockDataService.allUsers[1]],
+                    status: .pending
+                ),
+                DONEOTask(
+                    title: "Pintar paredes",
+                    status: .done
+                )
+            ]
+        ))
+    }
+}
 struct ProjectInfoView: View {
     @Environment(\.dismiss) private var dismiss
     @Bindable var viewModel: ProjectChatViewModel
